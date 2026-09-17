@@ -1,0 +1,11 @@
+{
+  "name": "SoMusic",
+  "short_name": "SoMusic",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#120b0d",
+  "theme_color": "#b72542",
+  "icons": [
+    {"src":"./assets/logo.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

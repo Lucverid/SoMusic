@@ -1,0 +1,5 @@
+{
+  "clientId": "YOUR_SPOTIFY_CLIENT_ID",
+  "redirectUri": "https://YOUR_USERNAME.github.io/YOUR_REPO/",
+  "searchProxyUrl": "https://YOUR_WORKER.workers.dev/search"
+}

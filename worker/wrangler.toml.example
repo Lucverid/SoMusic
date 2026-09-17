@@ -1,0 +1,9 @@
+name = "somusic-spotify-search"
+main = "spotify-proxy.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://YOUR_USERNAME.github.io"
+
+# Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET as encrypted secrets in Cloudflare,
+# never inside this file/repository.
