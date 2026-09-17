@@ -1,12 +1,51 @@
-const CACHE='somusic-v0.2.1-hardening';
+const CACHE='somusic-v0.2.2-stability';
 const CORE=['./','./index.html','./styles.css','./premium.css','./app.js','./premium.js','./spotify.js','./firebase-adapter.js','./manifest.webmanifest','./assets/logo.svg'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{
-  if(e.request.method!=='GET') return;
-  e.respondWith(fetch(e.request).then(r=>{
-    const copy=r.clone();
-    caches.open(CACHE).then(c=>c.put(e.request,copy)).catch(()=>{});
-    return r;
-  }).catch(()=>caches.match(e.request).then(r=>r||caches.match('./index.html'))));
+
+self.addEventListener('install',event=>{
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache=>cache.addAll(CORE))
+      .then(()=>self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate',event=>{
+  event.waitUntil(
+    caches.keys()
+      .then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))))
+      .then(()=>self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch',event=>{
+  const req=event.request;
+  if(req.method!=='GET') return;
+
+  const url=new URL(req.url);
+
+  // Do not intercept/cache Spotify, Firebase, CDN, or any cross-origin API response.
+  if(url.origin!==self.location.origin) return;
+
+  if(req.mode==='navigate'){
+    event.respondWith(
+      fetch(req).catch(()=>caches.match('./index.html'))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(req)
+      .then(res=>{
+        if(res.ok){
+          const copy=res.clone();
+          caches.open(CACHE).then(cache=>cache.put(req,copy)).catch(()=>{});
+        }
+        return res;
+      })
+      .catch(async()=>{
+        const cached=await caches.match(req);
+        if(cached) return cached;
+        throw new Error('Offline resource unavailable');
+      })
+  );
 });

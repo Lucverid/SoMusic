@@ -212,7 +212,7 @@ export async function spotifySearchAdmin(q,limit=8){
   if(!q) return [];
   const safeLimit=Math.max(1,Math.min(10,Number(limit)||8));
   const data=await api(`/search?type=track&limit=${safeLimit}&q=${encodeURIComponent(q)}`);
-  return normalizeTracks(data?.tracks?.items||[]);
+  return normalizeTracks((data?.tracks?.items||[]).filter(t=>!t.explicit));
 }
 export async function spotifySearchGuest(q,limit=8){
   const cfg=getSpotifyConfig();
@@ -237,7 +237,8 @@ function normalizeTracks(items){
     artist:(t.artists||[]).map(a=>a.name).join(', '),
     durationMs:t.duration_ms||0,
     duration:fmt(t.duration_ms),
-    image:t.album?.images?.[1]?.url||t.album?.images?.[0]?.url||''
+    image:t.album?.images?.[1]?.url||t.album?.images?.[0]?.url||'',
+    explicit:!!t.explicit
   }));
 }
 function fmt(ms=0){

@@ -7,13 +7,78 @@ service cloud.firestore {
         && request.auth.token.email == 'argamaulanays@gmail.com';
     }
 
+    function metaPath(venueId) {
+      return /databases/$(database)/documents/venues/$(venueId)/meta/public;
+    }
+
+    function requestPath(venueId, requestId) {
+      return /databases/$(database)/documents/venues/$(venueId)/requests/$(requestId);
+    }
+
     function publicMeta(venueId) {
-      return get(/databases/$(database)/documents/venues/$(venueId)/meta/public).data;
+      return get(metaPath(venueId)).data;
     }
 
     function validTable(venueId, tableId) {
       return publicMeta(venueId).tables is list
         && tableId in publicMeta(venueId).tables;
+    }
+
+    function validNewRequest(venueId) {
+      return request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'deviceId','tableId','title','artist','trackId','uri',
+          'durationMs','image','status','ownerUid','createdAt','createdAtMs'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() > 0
+        && request.resource.data.deviceId.size() <= 100
+        && request.resource.data.tableId is string
+        && request.resource.data.tableId.size() > 0
+        && request.resource.data.tableId.size() <= 16
+        && validTable(venueId, request.resource.data.tableId)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.artist is string
+        && request.resource.data.artist.size() <= 200
+        && request.resource.data.trackId is string
+        && request.resource.data.trackId.size() <= 128
+        && request.resource.data.uri is string
+        && request.resource.data.uri.size() <= 256
+        && request.resource.data.image is string
+        && request.resource.data.image.size() <= 2048
+        && request.resource.data.durationMs is int
+        && request.resource.data.durationMs >= 0
+        && request.resource.data.durationMs <= publicMeta(venueId).policy.maxDurationMin * 60000
+        && request.resource.data.createdAtMs is int
+        && (
+          request.resource.data.status == 'pending'
+          || (
+            publicMeta(venueId).policy.manualApproval == false
+            && request.resource.data.status == 'approved'
+          )
+        );
+    }
+
+    function validAutoQueueCreate(venueId, queueId) {
+      let req = get(requestPath(venueId, queueId)).data;
+      return request.auth != null
+        && publicMeta(venueId).policy.manualApproval == false
+        && request.resource.data.keys().hasOnly([
+          'requestId','tableId','title','artist','trackId','uri',
+          'durationMs','image','position','createdAt','createdAtMs'
+        ])
+        && request.resource.data.requestId == queueId
+        && req.ownerUid == request.auth.uid
+        && req.status == 'approved'
+        && request.resource.data.tableId == req.tableId
+        && request.resource.data.title == req.title
+        && request.resource.data.artist == req.artist
+        && request.resource.data.trackId == req.trackId
+        && request.resource.data.uri == req.uri
+        && request.resource.data.durationMs == req.durationMs;
     }
 
     match /venues/{venueId}/meta/public {
@@ -23,31 +88,14 @@ service cloud.firestore {
 
     match /venues/{venueId}/requests/{requestId} {
       allow read: if request.auth != null;
-
-      allow create: if request.auth != null
-        && request.resource.data.deviceId is string
-        && request.resource.data.deviceId.size() <= 100
-        && request.resource.data.tableId is string
-        && request.resource.data.tableId.size() <= 16
-        && validTable(venueId, request.resource.data.tableId)
-        && request.resource.data.title is string
-        && request.resource.data.title.size() <= 200
-        && request.resource.data.artist is string
-        && request.resource.data.artist.size() <= 200
-        && (
-          request.resource.data.status == 'pending'
-          || (
-            publicMeta(venueId).policy.manualApproval == false
-            && request.resource.data.status == 'approved'
-          )
-        );
-
+      allow create: if validNewRequest(venueId);
       allow update, delete: if isAdmin();
     }
 
     match /venues/{venueId}/queue/{queueId} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow create: if isAdmin() || validAutoQueueCreate(venueId, queueId);
+      allow update, delete: if isAdmin();
     }
 
     match /venues/{venueId}/history/{historyId} {

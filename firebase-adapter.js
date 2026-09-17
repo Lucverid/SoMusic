@@ -28,7 +28,11 @@ export async function ensureGuestAuth(){
   try{return (await sdk.signInAnonymously(auth)).user}catch(e){console.warn('Anonymous auth unavailable',e);return null}
 }
 export async function adminLogin(email,password){if(!auth) throw new Error('Firebase belum aktif.');return (await sdk.signInWithEmailAndPassword(auth,email,password)).user}
-export async function adminLogout(){if(auth) await sdk.signOut(auth)}
+export async function adminLogout(){
+  if(!auth) return null;
+  await sdk.signOut(auth);
+  try{return (await sdk.signInAnonymously(auth)).user}catch(e){console.warn('Guest auth after logout unavailable',e);return null}
+}
 export function currentUser(){return auth?.currentUser||null}
 export function onAuth(fn){if(!auth){fn(null);return()=>{}}return sdk.onAuthStateChanged(auth,fn)}
 
@@ -49,14 +53,53 @@ export function subscribeCloud({onMeta,onRequests,onQueue,onError}){
 }
 export async function writeMeta(meta){if(!db) throw new Error('Cloud belum aktif.');return sdk.setDoc(metaRef(),meta,{merge:true})}
 export async function createRequest(r){
-  if(!db) throw new Error('Cloud belum aktif.'); await ensureGuestAuth();
+  if(!db) throw new Error('Cloud belum aktif.');
+  const user=await ensureGuestAuth();
+  if(!user) throw new Error('Guest authentication gagal. Cek Firebase Anonymous Auth.');
   const ref=sdk.doc(reqCol());
   const data=withoutClientId(r);
-  await sdk.setDoc(ref,{...data,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});
+  await sdk.setDoc(ref,{
+    ...data,
+    ownerUid:user.uid,
+    createdAt:sdk.serverTimestamp(),
+    createdAtMs:Date.now()
+  });
   return ref.id;
 }
 export async function updateRequest(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'requests',id),patch)}
 export async function deleteRequest(id){return sdk.deleteDoc(sdk.doc(db,'venues',venueId,'requests',id))}
+export async function approveRequestAtomic(id){
+  if(!db) throw new Error('Cloud belum aktif.');
+  const requestId=String(id||'').trim();
+  if(!requestId) throw new Error('Request ID kosong.');
+  const rRef=sdk.doc(db,'venues',venueId,'requests',requestId);
+  const qRef=sdk.doc(db,'venues',venueId,'queue',requestId.replace(/\//g,'_'));
+  const now=Date.now();
+
+  await sdk.runTransaction(db,async tx=>{
+    const snap=await tx.get(rRef);
+    if(!snap.exists()) throw new Error('Request sudah tidak ditemukan.');
+    const r=snap.data();
+    if(['rejected','played','cancelled','playing'].includes(r.status)){
+      throw new Error(`Request tidak bisa di-approve karena statusnya ${r.status}.`);
+    }
+    tx.set(qRef,{
+      requestId,
+      tableId:String(r.tableId||''),
+      title:String(r.title||''),
+      artist:String(r.artist||''),
+      trackId:String(r.trackId||''),
+      uri:String(r.uri||''),
+      durationMs:Number(r.durationMs||0),
+      image:String(r.image||''),
+      position:Number(r.approvedAtMs||now),
+      createdAt:sdk.serverTimestamp(),
+      createdAtMs:Number(r.createdAtMs||now)
+    },{merge:true});
+    tx.update(rRef,{status:'approved',approvedAtMs:now});
+  });
+  return requestId;
+}
 export async function addQueue(item){
   if(!db) throw new Error('Cloud belum aktif.');
   const data=withoutClientId(item);
@@ -70,6 +113,7 @@ export async function addQueue(item){
 export async function updateQueue(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'queue',id),patch)}
 export async function removeQueue(id){return sdk.deleteDoc(sdk.doc(db,'venues',venueId,'queue',id))}
 export async function addHistory(item){
+  if(!db) throw new Error('Cloud belum aktif.');
   const ref=sdk.doc(histCol());
   const data=withoutClientId(item);
   await sdk.setDoc(ref,{...data,playedAt:sdk.serverTimestamp(),playedAtMs:Date.now()});

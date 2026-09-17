@@ -1,5 +1,5 @@
 
-import { getFirebaseConfig, isCloudReady, writeMeta } from './firebase-adapter.js';
+import { getFirebaseConfig, isCloudReady, writeMeta, approveRequestAtomic } from './firebase-adapter.js';
 
 const LOCAL_KEY='somusic_local_state_v1';
 const $=(s,el=document)=>el.querySelector(s);
@@ -206,6 +206,7 @@ function enhanceSettings(){
           state.meta.policy={...(state.meta.policy||{}),...policy};
           localStorage.setItem(LOCAL_KEY,JSON.stringify(state));
           try{new BroadcastChannel('somusic-v1').postMessage({type:'sync'})}catch{}
+          setTimeout(()=>location.reload(),120);
         }
         notify('Rules disimpan','Daftar meja tidak diubah.');
       }catch(err){notify('Rules gagal',err.message)}
@@ -235,6 +236,66 @@ function enhanceHero(){
   });
   stage.addEventListener('pointerdown',()=>stage.classList.add('is-engaged'));
 }
+
+let qrRepairTimer=null;
+let qrRepairTicks=0;
+function repairQrFallbacks(){
+  if(typeof window.QRCode!=='function') return false;
+  let repaired=false;
+  $$('.qr-box').forEach(box=>{
+    if(box.querySelector('canvas,img')) return;
+    const fallback=box.querySelector('.qr-fallback');
+    const text=fallback?.textContent?.trim();
+    if(!text) return;
+    try{
+      box.innerHTML='';
+      new window.QRCode(box,{
+        text,
+        width:134,
+        height:134,
+        colorDark:'#111111',
+        colorLight:'#ffffff',
+        correctLevel:window.QRCode.CorrectLevel?.M
+      });
+      repaired=true;
+    }catch{}
+  });
+  return repaired;
+}
+function scheduleQrRepair(){
+  if(qrRepairTimer) return;
+  qrRepairTicks=0;
+  qrRepairTimer=setInterval(()=>{
+    qrRepairTicks++;
+    repairQrFallbacks();
+    if(qrRepairTicks>=40){
+      clearInterval(qrRepairTimer);
+      qrRepairTimer=null;
+    }
+  },250);
+}
+function setupAtomicApprove(){
+  document.addEventListener('click',async e=>{
+    const btn=e.target.closest('[data-approve]');
+    if(!btn||!isCloudReady()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if(btn.dataset.atomicBusy==='1') return;
+    btn.dataset.atomicBusy='1';
+    btn.disabled=true;
+    const old=btn.textContent;
+    btn.textContent='Approving…';
+    try{
+      await approveRequestAtomic(btn.dataset.approve);
+      notify('Request approved','Request masuk antrean secara atomik.');
+    }catch(err){
+      notify('Approve gagal',err.message);
+      btn.disabled=false;
+      btn.textContent=old;
+      btn.dataset.atomicBusy='0';
+    }
+  },true);
+}
 function addClickLocks(){
   document.addEventListener('click',e=>{
     const btn=e.target.closest('[data-approve],[data-reject],[data-play-queue],[data-remove-queue]');
@@ -259,10 +320,13 @@ const observer=new MutationObserver(()=>{
   enhanceHero();
   enhanceTables();
   enhanceSettings();
+  repairQrFallbacks();
 });
 observer.observe(document.documentElement,{subtree:true,childList:true});
-window.addEventListener('hashchange',()=>setTimeout(()=>{enhanceTables();enhanceSettings();enhanceHero()},0));
+window.addEventListener('hashchange',()=>setTimeout(()=>{enhanceTables();enhanceSettings();enhanceHero();scheduleQrRepair()},0));
+setupAtomicApprove();
 addClickLocks();
+scheduleQrRepair();
 enhanceHero();
 enhanceTables();
 enhanceSettings();
