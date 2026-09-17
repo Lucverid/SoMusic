@@ -58,9 +58,13 @@ export async function createRequest(r){
 export async function updateRequest(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'requests',id),patch)}
 export async function deleteRequest(id){return sdk.deleteDoc(sdk.doc(db,'venues',venueId,'requests',id))}
 export async function addQueue(item){
-  const ref=sdk.doc(queueCol());
+  if(!db) throw new Error('Cloud belum aktif.');
   const data=withoutClientId(item);
-  await sdk.setDoc(ref,{...data,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});
+  const requestId=String(data?.requestId||'').trim();
+  const ref=requestId
+    ? sdk.doc(queueCol(), requestId.replace(/\//g,'_'))
+    : sdk.doc(queueCol());
+  await sdk.setDoc(ref,{...data,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()},{merge:true});
   return ref.id;
 }
 export async function updateQueue(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'queue',id),patch)}

@@ -1,11 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // IMPORTANT: ganti dengan email admin Firebase Authentication milik kasir/admin.
     function isAdmin() {
       return request.auth != null
         && request.auth.token.email != null
-        && request.auth.token.email == 'GANTI_DENGAN_EMAIL_ADMIN';
+        && request.auth.token.email == 'argamaulanays@gmail.com';
+    }
+
+    function publicMeta(venueId) {
+      return get(/databases/$(database)/documents/venues/$(venueId)/meta/public).data;
+    }
+
+    function validTable(venueId, tableId) {
+      return publicMeta(venueId).tables is list
+        && tableId in publicMeta(venueId).tables;
     }
 
     match /venues/{venueId}/meta/public {
@@ -15,12 +23,25 @@ service cloud.firestore {
 
     match /venues/{venueId}/requests/{requestId} {
       allow read: if request.auth != null;
+
       allow create: if request.auth != null
         && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() <= 100
         && request.resource.data.tableId is string
+        && request.resource.data.tableId.size() <= 16
+        && validTable(venueId, request.resource.data.tableId)
         && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
         && request.resource.data.artist is string
-        && request.resource.data.status in ['pending', 'approved'];
+        && request.resource.data.artist.size() <= 200
+        && (
+          request.resource.data.status == 'pending'
+          || (
+            publicMeta(venueId).policy.manualApproval == false
+            && request.resource.data.status == 'approved'
+          )
+        );
+
       allow update, delete: if isAdmin();
     }
 
