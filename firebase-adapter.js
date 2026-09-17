@@ -37,21 +37,37 @@ const reqCol=()=>sdk.collection(db,'venues',venueId,'requests');
 const queueCol=()=>sdk.collection(db,'venues',venueId,'queue');
 const histCol=()=>sdk.collection(db,'venues',venueId,'history');
 
+const snapData=d=>({...d.data(),id:d.id});
+const withoutClientId=value=>{const {id:ignored,...rest}=value||{};return rest};
+
 export function subscribeCloud({onMeta,onRequests,onQueue,onError}){
   if(!db) return ()=>{};
-  unsubs.push(sdk.onSnapshot(metaRef(),s=>{if(s.exists()) onMeta?.({id:s.id,...s.data()})},onError));
-  unsubs.push(sdk.onSnapshot(sdk.query(reqCol(),sdk.orderBy('createdAt','asc')),s=>onRequests?.(s.docs.map(d=>({id:d.id,...d.data()}))),onError));
-  unsubs.push(sdk.onSnapshot(sdk.query(queueCol(),sdk.orderBy('position','asc')),s=>onQueue?.(s.docs.map(d=>({id:d.id,...d.data()}))),onError));
+  unsubs.push(sdk.onSnapshot(metaRef(),s=>{if(s.exists()) onMeta?.({...s.data(),id:s.id})},onError));
+  unsubs.push(sdk.onSnapshot(sdk.query(reqCol(),sdk.orderBy('createdAt','asc')),s=>onRequests?.(s.docs.map(snapData)),onError));
+  unsubs.push(sdk.onSnapshot(sdk.query(queueCol(),sdk.orderBy('position','asc')),s=>onQueue?.(s.docs.map(snapData)),onError));
   return ()=>{unsubs.forEach(f=>f?.());unsubs=[]}
 }
 export async function writeMeta(meta){if(!db) throw new Error('Cloud belum aktif.');return sdk.setDoc(metaRef(),meta,{merge:true})}
 export async function createRequest(r){
   if(!db) throw new Error('Cloud belum aktif.'); await ensureGuestAuth();
-  const ref=sdk.doc(reqCol()); await sdk.setDoc(ref,{...r,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});return ref.id;
+  const ref=sdk.doc(reqCol());
+  const data=withoutClientId(r);
+  await sdk.setDoc(ref,{...data,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});
+  return ref.id;
 }
 export async function updateRequest(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'requests',id),patch)}
 export async function deleteRequest(id){return sdk.deleteDoc(sdk.doc(db,'venues',venueId,'requests',id))}
-export async function addQueue(item){const ref=sdk.doc(queueCol());await sdk.setDoc(ref,{...item,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});return ref.id}
+export async function addQueue(item){
+  const ref=sdk.doc(queueCol());
+  const data=withoutClientId(item);
+  await sdk.setDoc(ref,{...data,createdAt:sdk.serverTimestamp(),createdAtMs:Date.now()});
+  return ref.id;
+}
 export async function updateQueue(id,patch){return sdk.updateDoc(sdk.doc(db,'venues',venueId,'queue',id),patch)}
 export async function removeQueue(id){return sdk.deleteDoc(sdk.doc(db,'venues',venueId,'queue',id))}
-export async function addHistory(item){const ref=sdk.doc(histCol());await sdk.setDoc(ref,{...item,playedAt:sdk.serverTimestamp(),playedAtMs:Date.now()});return ref.id}
+export async function addHistory(item){
+  const ref=sdk.doc(histCol());
+  const data=withoutClientId(item);
+  await sdk.setDoc(ref,{...data,playedAt:sdk.serverTimestamp(),playedAtMs:Date.now()});
+  return ref.id;
+}
